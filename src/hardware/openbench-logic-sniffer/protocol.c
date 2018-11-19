@@ -151,7 +151,7 @@ SR_PRIV struct sr_dev_inst *get_metadata(struct sr_serial_dev_inst *serial)
 {
 	struct sr_dev_inst *sdi;
 	struct dev_context *devc;
-	uint32_t tmp_int, ui;
+	uint32_t tmp_int;
 	uint8_t key, type, token;
 	int delay_ms;
 	GString *tmp_str, *devname, *version;
@@ -222,9 +222,7 @@ SR_PRIV struct sr_dev_inst *get_metadata(struct sr_serial_dev_inst *serial)
 			switch (token) {
 			case 0x00:
 				/* Number of usable channels */
-				for (ui = 0; ui < tmp_int; ui++)
-					sr_channel_new(sdi, ui, SR_CHANNEL_LOGIC, TRUE,
-							ols_channel_names[ui]);
+				devc->max_channels = tmp_int;
 				break;
 			case 0x01:
 				/* Amount of sample memory available (bytes) */
@@ -258,9 +256,7 @@ SR_PRIV struct sr_dev_inst *get_metadata(struct sr_serial_dev_inst *serial)
 			switch (token) {
 			case 0x00:
 				/* Number of usable channels */
-				for (ui = 0; ui < tmp_c; ui++)
-					sr_channel_new(sdi, ui, SR_CHANNEL_LOGIC, TRUE,
-							ols_channel_names[ui]);
+				devc->max_channels = (uint32_t)tmp_c;
 				break;
 			case 0x01:
 				/* protocol version */

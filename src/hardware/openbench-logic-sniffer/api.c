@@ -83,7 +83,77 @@ static const uint64_t samplerates[] = {
 	SR_HZ(1),
 };
 
+/* List of sample rates for the Logic Pirate, 40 MHz version. */
+static const uint64_t logicPirate40_samplerates[] = {
+	SR_KHZ(2),
+	SR_KHZ(5),
+	SR_KHZ(10),
+	SR_KHZ(20),
+	SR_KHZ(50),
+	SR_KHZ(100),
+	SR_KHZ(200),
+	SR_KHZ(500),
+	SR_MHZ(1),
+	SR_MHZ(2),
+	SR_MHZ(5),
+	SR_MHZ(10),
+	SR_MHZ(20),
+	SR_MHZ(40),
+};
+
+/* List of sample rates for the Logic Pirate, 60 MHz version. */
+static const uint64_t logicPirate60_samplerates[] = {
+	SR_KHZ(2),
+	SR_KHZ(5),
+	SR_KHZ(10),
+	SR_KHZ(20),
+	SR_KHZ(50),
+	SR_KHZ(100),
+	SR_KHZ(200),
+	SR_KHZ(500),
+	SR_MHZ(1),
+	SR_MHZ(2),
+	SR_MHZ(5),
+	SR_MHZ(10),
+	SR_MHZ(15),
+	SR_MHZ(30),
+	SR_MHZ(60),
+};
+
 #define RESPONSE_DELAY_US (10 * 1000)
+
+static void setup_device (struct sr_dev_inst *sdi)
+{
+	int ui;
+	struct dev_context *devc = (struct dev_context *)(sdi->priv);
+
+	/* Use defaults based on each model.
+	 * (Do not override any possible actual value--new firmware?)
+	 * TBD: default configuration from user file?
+	 */
+	if (strstr(sdi->model, "Logic Pirate") != NULL) {
+		if (devc->max_channels == 0)
+			devc->max_channels = 8;
+		if (devc->max_samplerate == 0) {
+			if (strstr (sdi->model, "60") != NULL) {
+				devc->max_samplerate = SR_MHZ(60);
+				devc->samplerates = logicPirate60_samplerates;
+				devc->samplerates_count = ARRAY_SIZE(logicPirate60_samplerates);
+			} else {
+				devc->max_samplerate = SR_MHZ(40);
+				devc->samplerates = logicPirate40_samplerates;
+				devc->samplerates_count = ARRAY_SIZE(logicPirate40_samplerates);
+			}
+		}
+		if (devc->max_samples == 0)
+			devc->max_samples = 256*1024; // 256KSamples
+	}
+
+	/* Declare all usable channels */
+	for (ui = 0; ui < devc->max_channels; ui++)
+		sr_channel_new(sdi, ui, SR_CHANNEL_LOGIC, TRUE,
+				ols_channel_names[ui]);
+}
 
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
@@ -162,6 +232,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	if (sp_input_waiting(serial->data) != 0) {
 		/* Got metadata. */
 		sdi = get_metadata(serial);
+		setup_device (sdi);
 	} else {
 		/* Not an OLS -- some other board that uses the sump protocol. */
 		sr_info("Device does not support metadata.");
@@ -242,7 +313,14 @@ static int config_set(uint32_t key, GVariant *data,
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
 		tmp_u64 = g_variant_get_uint64(data);
-		if (tmp_u64 < samplerates[0] || tmp_u64 > samplerates[1])
+		if (devc->samplerates != NULL) {
+			unsigned int i;
+			for (i = 0; i < devc->samplerates_count; i++) {
+				if (tmp_u64 == devc->samplerates[i]) break;
+			}
+			if (i >= devc->samplerates_count)
+				return SR_ERR_SAMPLERATE;
+		} else if (tmp_u64 < samplerates[0] || tmp_u64 > samplerates[1])
 			return SR_ERR_SAMPLERATE;
 		return ols_set_samplerate(sdi, g_variant_get_uint64(data));
 	case SR_CONF_LIMIT_SAMPLES:
@@ -317,7 +395,12 @@ static int config_list(uint32_t key, GVariant **data,
 	case SR_CONF_DEVICE_OPTIONS:
 		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
 	case SR_CONF_SAMPLERATE:
-		*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
+		devc = sdi->priv;
+		if (devc->samplerates != NULL)
+			*data = std_gvar_samplerates(devc->samplerates,
+										devc->samplerates_count);
+		else
+			*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
 		break;
 	case SR_CONF_TRIGGER_MATCH:
 		*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
